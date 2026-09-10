@@ -277,6 +277,12 @@ export default function Home() {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleGenerate();
+                  }
+                }}
                 disabled={loading}
                 rows={3}
                 placeholder="✨ Write whatever you want here (e.g. 'Build an E-Commerce storefront', 'Create a SaaS pricing matrix')..."
