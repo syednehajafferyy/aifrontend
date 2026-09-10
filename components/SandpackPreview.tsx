@@ -9,7 +9,7 @@ interface CodePreviewProps {
 const DEFAULT_CODE = `import React, { useState } from "react";
 
 export default function App() {
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState<number>(0);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-sans">
@@ -52,10 +52,10 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
   return (
     <div className="w-full rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl">
       <SandpackProvider
-        template="react"
+        template="react-ts"
         theme="dark"
         files={{
-          "/App.js": displayCode,
+          "/App.tsx": displayCode,
           "/public/index.html": `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -88,7 +88,7 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
               <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  App.js (Generated Source)
+                  App.tsx (TypeScript React Source)
                 </span>
               </div>
               <SandpackCodeEditor
