@@ -76,9 +76,9 @@ export async function POST(req: NextRequest) {
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
-  // 2. Google Gemini Provider (tries candidate models: gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-flash-latest, etc)
+  // 2. Google Gemini Provider (tries candidate models: gemini-3.6-flash, gemini-3.1-pro-preview, gemini-2.0-flash, etc)
   if (geminiKey && !geminiKey.includes("your-key-here") && geminiKey.length > 10) {
-    const candidateModels = ["gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-pro", "gemini-pro"];
+    const candidateModels = ["gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
     const genAI = new GoogleGenerativeAI(geminiKey);
     const userMsg = existingCode && existingCode.length > 50
       ? `EXISTING REACT CODE:\n\`\`\`tsx\n${existingCode}\n\`\`\`\n\nUSER MODIFICATION REQUEST: ${prompt}\n\nINSTRUCTION: Modify the Existing Code according to the User Modification Request. Output ONLY executable TSX code.`
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Direct REST API fallback
-    for (const modelName of ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]) {
+    for (const modelName of ["gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]) {
       try {
         const userPrompt = existingCode && existingCode.length > 50
           ? `EXISTING REACT CODE:\n${existingCode}\n\nUSER REQUEST: ${prompt}`
