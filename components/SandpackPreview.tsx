@@ -52,11 +52,11 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
   return (
     <div className="w-full rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl">
       <SandpackProvider
-        template="react-ts"
+        template="vite-react-ts"
         theme="dark"
         files={{
-          "/App.tsx": displayCode,
-          "/public/index.html": `<!DOCTYPE html>
+          "/src/App.tsx": displayCode,
+          "/index.html": `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -66,6 +66,7 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
   </head>
   <body class="bg-slate-950 text-slate-100">
     <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>`,
         }}
@@ -79,6 +80,8 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
         options={{
           recompileMode: "delayed",
           recompileDelay: 300,
+          showNavigator: false,
+          showTabs: true,
         }}
       >
         <SandpackLayout className="!border-none !bg-slate-950">
@@ -88,7 +91,7 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
               <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  App.tsx (TypeScript React Source)
+                  App.tsx (TypeScript Source)
                 </span>
               </div>
               <SandpackCodeEditor
