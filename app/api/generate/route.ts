@@ -83,9 +83,9 @@ export async function POST(req: NextRequest) {
       const genAI = new GoogleGenerativeAI(geminiKey);
       let model;
       try {
-        model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      } catch {
         model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      } catch {
+        model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
       }
 
       const userMsg = existingCode && existingCode.length > 50
@@ -102,9 +102,37 @@ export async function POST(req: NextRequest) {
         });
       }
     } catch (err: any) {
-      console.error("Gemini AI API Error:", err?.message || err);
+      console.warn("GoogleGenerativeAI SDK error, attempting direct REST fetch...", err?.message);
+      try {
+        const userPrompt = existingCode && existingCode.length > 50
+          ? `EXISTING REACT CODE:\n${existingCode}\n\nUSER REQUEST: ${prompt}`
+          : `USER REQUEST: ${prompt}`;
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${userPrompt}` }] }],
+            }),
+          }
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          let code = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          code = code.replace(/```jsx|```javascript|```tsx|```/g, "").trim();
+          if (code.length > 20) {
+            return new Response(code, { headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" } });
+          }
+        }
+      } catch (e) {
+        console.warn("Gemini REST API fetch error", e);
+      }
+
       return NextResponse.json(
-        { error: `Gemini API Generation Error: ${err?.message || "Failed to generate code from Google Gemini AI."}` },
+        { error: `Gemini API Error: ${err?.message || "Failed to generate code from Google Gemini AI."}` },
         { status: 500, headers: corsHeaders }
       );
     }
