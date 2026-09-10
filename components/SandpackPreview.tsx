@@ -4,6 +4,8 @@ import { SandpackProvider, SandpackPreview, SandpackCodeEditor, SandpackLayout }
 
 interface CodePreviewProps {
   code?: string;
+  codeOnly?: boolean;
+  previewOnly?: boolean;
 }
 
 const DEFAULT_CODE = `import React, { useState } from "react";
@@ -46,7 +48,7 @@ export default function App() {
   );
 }`;
 
-export default function CustomSandpackPreview({ code }: CodePreviewProps) {
+export default function CustomSandpackPreview({ code, codeOnly = false, previewOnly = false }: CodePreviewProps) {
   const displayCode = code && code.trim().length > 0 ? code : DEFAULT_CODE;
 
   return (
@@ -94,37 +96,64 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         }}
       >
         <SandpackLayout className="!border-none !bg-slate-950">
-          <div className="grid grid-cols-1 lg:grid-cols-2 w-full min-h-[550px] border-none">
-            {/* Editor Panel */}
-            <div className="border-b lg:border-b-0 lg:border-r border-slate-800/80 bg-slate-950 h-[550px] overflow-hidden">
+          {previewOnly ? (
+            <div className="w-full h-[calc(100vh-100px)] min-h-[600px] bg-slate-950">
+              <SandpackPreview
+                showRefreshButton
+                showOpenInCodeSandbox={false}
+                style={{ height: "100%" }}
+              />
+            </div>
+          ) : codeOnly ? (
+            <div className="w-full min-h-[550px] bg-slate-950 overflow-hidden">
               <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  App.tsx (TypeScript Source)
+                  Generated Codebase Structure (/src/App.tsx, /src/main.tsx, /index.html)
                 </span>
               </div>
               <SandpackCodeEditor
                 showLineNumbers
                 showInlineErrors
+                showTabs
                 wrapContent
-                style={{ height: "calc(100% - 33px)" }}
+                style={{ height: "520px" }}
               />
             </div>
-            {/* Live Preview Panel */}
-            <div className="bg-slate-950 h-[550px] overflow-hidden">
-              <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                  Live Output Preview
-                </span>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 w-full min-h-[550px] border-none">
+              {/* Editor Panel */}
+              <div className="border-b lg:border-b-0 lg:border-r border-slate-800/80 bg-slate-950 h-[550px] overflow-hidden">
+                <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    App.tsx (TypeScript Source)
+                  </span>
+                </div>
+                <SandpackCodeEditor
+                  showLineNumbers
+                  showInlineErrors
+                  showTabs
+                  wrapContent
+                  style={{ height: "calc(100% - 33px)" }}
+                />
               </div>
-              <SandpackPreview
-                showRefreshButton
-                showOpenInCodeSandbox={false}
-                style={{ height: "calc(100% - 33px)" }}
-              />
+              {/* Live Preview Panel */}
+              <div className="bg-slate-950 h-[550px] overflow-hidden">
+                <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    Live Output Preview
+                  </span>
+                </div>
+                <SandpackPreview
+                  showRefreshButton
+                  showOpenInCodeSandbox={false}
+                  style={{ height: "calc(100% - 33px)" }}
+                />
+              </div>
             </div>
-          </div>
+          )}
         </SandpackLayout>
       </SandpackProvider>
     </div>
