@@ -13,7 +13,6 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/dashboard") || pathname.startsWith("/dashboard/leads");
 
   const isProtectedApiRoute =
-    pathname.startsWith("/api/generate") ||
     pathname.startsWith("/api/deploy") ||
     pathname.startsWith("/api/projects") ||
     pathname.startsWith("/api/leads");
@@ -39,7 +38,6 @@ export function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
-    "/api/generate",
     "/api/deploy",
     "/api/projects/:path*",
     "/api/leads/:path*",
