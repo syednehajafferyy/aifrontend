@@ -54,20 +54,11 @@ export default function CustomSandpackPreview({ code, codeOnly = false, previewO
   return (
     <div className="w-full rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl">
       <SandpackProvider
-        template="vite-react-ts"
+        template="react-ts"
         theme="dark"
         files={{
-          "/src/App.tsx": displayCode,
-          "/src/main.tsx": `import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App'
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)`,
-          "/index.html": `<!DOCTYPE html>
+          "/App.tsx": displayCode,
+          "/public/index.html": `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -77,7 +68,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </head>
   <body class="bg-slate-950 text-slate-100">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>`,
         }}
@@ -85,12 +75,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           dependencies: {
             "react": "^18.2.0",
             "react-dom": "^18.2.0",
-            "lucide-react": "^0.454.0",
           },
         }}
         options={{
           recompileMode: "delayed",
-          recompileDelay: 300,
+          recompileDelay: 200,
           showNavigator: false,
           showTabs: true,
         }}
@@ -109,7 +98,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 text-xs font-mono text-slate-400 flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Generated Codebase Structure (/src/App.tsx, /src/main.tsx, /index.html)
+                  Generated Codebase (/App.tsx, index.html)
                 </span>
               </div>
               <SandpackCodeEditor
