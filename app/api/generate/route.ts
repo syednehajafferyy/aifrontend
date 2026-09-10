@@ -32,7 +32,6 @@ function isValidPrompt(p: string): { valid: boolean; message?: string } {
     };
   }
 
-  // Check for random gibberish (e.g., random keyboard mashing without real space/word structure)
   const words = trimmed.split(/\s+/);
   if (words.length === 1 && trimmed.length > 5 && !/[aeiou]{2,}/i.test(trimmed) && /[^aeiou]{4,}/i.test(trimmed)) {
     return {
@@ -77,39 +76,43 @@ export async function POST(req: NextRequest) {
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
-  // 2. Google Gemini Provider
+  // 2. Google Gemini Provider (tries candidate models: gemini-1.5-flash-latest, gemini-1.5-flash, gemini-pro)
   if (geminiKey && !geminiKey.includes("your-key-here") && geminiKey.length > 10) {
-    try {
-      const genAI = new GoogleGenerativeAI(geminiKey);
-      let model;
+    const candidateModels = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-pro", "gemini-pro"];
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const userMsg = existingCode && existingCode.length > 50
+      ? `EXISTING REACT CODE:\n\`\`\`tsx\n${existingCode}\n\`\`\`\n\nUSER MODIFICATION REQUEST: ${prompt}\n\nINSTRUCTION: Modify the Existing Code according to the User Modification Request. Output ONLY executable TSX code.`
+      : `USER REQUEST: ${prompt}\n\nINSTRUCTION: Create a complete, modern, interactive React component in Tailwind CSS for App.tsx. Output ONLY executable TSX code.`;
+
+    let lastError = "";
+
+    for (const modelName of candidateModels) {
       try {
-        model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      } catch {
-        model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(`${SYSTEM_PROMPT}\n\n${userMsg}`);
+        let code = result.response.text();
+        code = code.replace(/```jsx|```javascript|```tsx|```/g, "").trim();
+
+        if (code && code.length > 20) {
+          return new Response(code, {
+            headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+          });
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+        console.warn(`Model ${modelName} failed:`, lastError);
       }
+    }
 
-      const userMsg = existingCode && existingCode.length > 50
-        ? `EXISTING REACT CODE:\n\`\`\`tsx\n${existingCode}\n\`\`\`\n\nUSER MODIFICATION REQUEST: ${prompt}\n\nINSTRUCTION: Modify the Existing Code according to the User Modification Request. Output ONLY executable TSX code.`
-        : `USER REQUEST: ${prompt}\n\nINSTRUCTION: Create a complete, modern, interactive React component in Tailwind CSS for App.tsx. Output ONLY executable TSX code.`;
-
-      const result = await model.generateContent(`${SYSTEM_PROMPT}\n\n${userMsg}`);
-      let code = result.response.text();
-      code = code.replace(/```jsx|```javascript|```tsx|```/g, "").trim();
-
-      if (code && code.length > 20) {
-        return new Response(code, {
-          headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
-        });
-      }
-    } catch (err: any) {
-      console.warn("GoogleGenerativeAI SDK error, attempting direct REST fetch...", err?.message);
+    // Direct REST API fallback
+    for (const modelName of ["gemini-1.5-flash", "gemini-pro"]) {
       try {
         const userPrompt = existingCode && existingCode.length > 50
           ? `EXISTING REACT CODE:\n${existingCode}\n\nUSER REQUEST: ${prompt}`
           : `USER REQUEST: ${prompt}`;
 
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -128,14 +131,16 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (e) {
-        console.warn("Gemini REST API fetch error", e);
+        console.warn("Gemini REST fetch error", e);
       }
-
-      return NextResponse.json(
-        { error: `Gemini API Error: ${err?.message || "Failed to generate code from Google Gemini AI."}` },
-        { status: 500, headers: corsHeaders }
-      );
     }
+
+    return NextResponse.json(
+      {
+        error: `Gemini API Error: Invalid API key or model unavailable. If your key starts with 'AQ.', please get a standard Gemini API key starting with 'AIzaSy...' from https://aistudio.google.com. Details: ${lastError}`,
+      },
+      { status: 400, headers: corsHeaders }
+    );
   }
 
   // 3. Anthropic Provider Fallback
