@@ -98,8 +98,6 @@ export default function App() {
     return `import React, { useState } from 'react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('all');
-
   const projects = [
     { title: 'AI Code Generator', desc: 'Full-stack AI canvas & live React compiler with Gemini integration.', tags: ['React', 'Tailwind', 'Gemini API'] },
     { title: 'Cloud Analytics Portal', desc: 'Real-time dashboard with dynamic chart visualizers.', tags: ['Next.js', 'TypeScript', 'Prisma'] },
@@ -204,7 +202,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions).catch(() => null);
   const userId = session?.user ? (session.user as { id: string }).id : "guest-user";
   const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
 
@@ -224,11 +222,16 @@ export async function POST(req: NextRequest) {
   const openaiKey = process.env.OPENAI_API_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
-  // Step 3 Strategy: GoogleGenerativeAI SDK
+  // Strategy 1: Google Gemini (2.0 Flash / 1.5 Flash)
   if (geminiKey && !geminiKey.includes("your-key-here") && geminiKey.length > 10) {
     try {
       const genAI = new GoogleGenerativeAI(geminiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      let model;
+      try {
+        model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      } catch {
+        model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      }
 
       const userMsg = existingCode && existingCode.length > 50
         ? `EXISTING REACT CODE:\n\`\`\`tsx\n${existingCode}\n\`\`\`\n\nUSER MODIFICATION REQUEST: ${prompt}\n\nINSTRUCTION: Modify the Existing Code according to the User Modification Request. Output ONLY executable TSX code.`
@@ -275,7 +278,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Anthropic Provider
+  // Strategy 2: Anthropic Provider
   if (apiKey && !apiKey.includes("your-key-here") && apiKey.length > 10) {
     try {
       const anthropic = new Anthropic({ apiKey });
@@ -293,7 +296,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Smart Synthesizer Fallback
+  // Strategy 3: Smart Synthesizer Fallback
   const fallbackCode = generateSmartFallbackComponent(prompt, existingCode);
   return new Response(fallbackCode, {
     headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
