@@ -56,6 +56,15 @@ export default function CustomSandpackPreview({ code }: CodePreviewProps) {
         theme="dark"
         files={{
           "/src/App.tsx": displayCode,
+          "/src/main.tsx": `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)`,
           "/index.html": `<!DOCTYPE html>
 <html lang="en">
   <head>

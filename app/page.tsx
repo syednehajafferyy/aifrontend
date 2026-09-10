@@ -31,7 +31,10 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await fetch("/api/generate", {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") || "";
+      const apiEndpoint = backendUrl ? `${backendUrl}/api/generate` : "/api/generate";
+
+      const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: targetPrompt }),
