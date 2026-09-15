@@ -1,0 +1,176 @@
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import Anthropic from "@anthropic-ai/sdk";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+export const runtime = "nodejs";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-gemini-key, x-openai-key, x-anthropic-key, x-custom-api-key, x-api-key",
+};
+
+const SYSTEM_PROMPT = `You are an expert AI code-generation engine (like Gemini and v0).
+Your task is to turn a user prompt into a single, self-contained, highly interactive React + Tailwind CSS component exported as default export in App.tsx.
+
+Rules:
+- Return ONLY executable TSX React code for App.tsx. Do NOT wrap in markdown fences or add explanatory text.
+- Use Tailwind CSS utility classes for styling — modern, vibrant designs, dark mode, smooth rounded corners, shadow effects, and flex/grid layouts.
+- Rely on standard React hooks (useState, useEffect, useMemo, useRef) for rich interactive state.
+- Do not import external packages other than "react" and "react-dom".
+- Ensure the component is fully functional, visually impressive, responsive, and completely tailored to the user's prompt.`;
+
+function isValidPrompt(p: string): { valid: boolean; message?: string } {
+  const trimmed = p.trim();
+  if (trimmed.length < 5) {
+    return {
+      valid: false,
+      message: "Prompt is too short. Please describe a clear UI or component to generate (e.g. 'Build a portfolio landing page').",
+    };
+  }
+
+  const words = trimmed.split(/\s+/);
+  if (words.length === 1 && trimmed.length > 5 && !/[aeiou]{2,}/i.test(trimmed) && /[^aeiou]{4,}/i.test(trimmed)) {
+    return {
+      valid: false,
+      message: "Invalid or non-sensical prompt. Please provide a meaningful description of the UI you want to build.",
+    };
+  }
+
+  return { valid: true };
+}
+
+export async function OPTIONS() {
+  return new Response(null, { headers: corsHeaders });
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions).catch(() => null);
+  const userId = session?.user ? (session.user as { id: string }).id : "guest-user";
+  const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
+
+  const rl = checkRateLimit(`gen_${userId || ip}`, { limit: 15, windowMs: 60000 });
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait a minute before generating again." },
+      { status: 429, headers: corsHeaders }
+    );
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const prompt = body.prompt || "";
+  const existingCode = body.existingCode || "";
+  const targetLanguage = body.targetLanguage || "React (TypeScript)";
+
+  // 1. Validate prompt input
+  const validation = isValidPrompt(prompt);
+  if (!validation.valid) {
+    return NextResponse.json(
+      { error: validation.message },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
+  // Extract user-provided keys from body or headers (from Settings Modal)
+  const userGeminiKey = body.geminiApiKey || body.geminiKey || req.headers.get("x-gemini-key");
+  const userAnthropicKey = body.anthropicApiKey || body.anthropicKey || body.apiKey || req.headers.get("x-anthropic-key") || req.headers.get("x-api-key");
+
+  const geminiKey = userGeminiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const apiKey = userAnthropicKey || process.env.ANTHROPIC_API_KEY;
+
+  const targetLangPrompt = `TARGET FRAMEWORK / LANGUAGE: ${targetLanguage}. Ensure the generated code strictly follows ${targetLanguage} conventions and syntaxes while exporting a default executable component structure.`;
+
+  // 2. Google Gemini Provider (tries active models: gemini-3.6-flash, gemini-3.1-flash-lite)
+  if (geminiKey && !geminiKey.includes("your-key-here") && geminiKey.length > 10) {
+    const candidateModels = ["gemini-3.6-flash", "gemini-3.1-flash-lite"];
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const userMsg = existingCode && existingCode.length > 50
+      ? `${targetLangPrompt}\nEXISTING CODE:\n\`\`\`\n${existingCode}\n\`\`\`\n\nUSER MODIFICATION REQUEST: ${prompt}\n\nINSTRUCTION: Modify the Existing Code according to the User Modification Request in ${targetLanguage}. Output ONLY executable code.`
+      : `${targetLangPrompt}\nUSER REQUEST: ${prompt}\n\nINSTRUCTION: Create a complete, modern, interactive application in ${targetLanguage}. Output ONLY executable code.`;
+
+    let lastError = "";
+
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(`${SYSTEM_PROMPT}\n\n${userMsg}`);
+        let code = result.response.text();
+        code = code.replace(/```jsx|```javascript|```tsx|```html|```python|```vue|```svelte|```java|```cpp|```c\+\+|```/g, "").trim();
+
+        if (code && code.length > 20) {
+          return new Response(code, {
+            headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
+          });
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+        console.warn(`Model ${modelName} failed:`, lastError);
+      }
+    }
+
+    // Direct REST API fallback
+    for (const modelName of candidateModels) {
+      try {
+        const userPrompt = existingCode && existingCode.length > 50
+          ? `${targetLangPrompt}\nEXISTING CODE:\n${existingCode}\n\nUSER REQUEST: ${prompt}`
+          : `${targetLangPrompt}\nUSER REQUEST: ${prompt}`;
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${userPrompt}` }] }],
+            }),
+          }
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          let code = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          code = code.replace(/```jsx|```javascript|```tsx|```html|```python|```vue|```svelte|```java|```cpp|```c\+\+|```/g, "").trim();
+          if (code.length > 20) {
+            return new Response(code, { headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" } });
+          }
+        }
+      } catch (e) {
+        console.warn("Gemini REST fetch error", e);
+      }
+    }
+
+    return NextResponse.json(
+      {
+        error: `Gemini API Error: Invalid API key or model unavailable. Details: ${lastError}`,
+      },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
+  // 3. Anthropic Provider Fallback
+  if (apiKey && !apiKey.includes("your-key-here") && apiKey.length > 10) {
+    try {
+      const anthropic = new Anthropic({ apiKey });
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: `${targetLangPrompt}\nBuild: ${prompt}\nExisting Code: ${existingCode}` }],
+      });
+      const codeText = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+      const cleaned = codeText.replace(/```jsx|```javascript|```tsx|```html|```python|```vue|```svelte|```java|```cpp|```c\+\+|```/g, "").trim();
+      return new Response(cleaned, { headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" } });
+    } catch (err: any) {
+      console.error("Anthropic Call Error:", err?.message || err);
+    }
+  }
+
+  // If no valid API Key configured
+  return NextResponse.json(
+    { error: "API Key not configured. Please input your API Key in Settings or set GEMINI_API_KEY in environment variables." },
+    { status: 400, headers: corsHeaders }
+  );
+}
