@@ -16,60 +16,73 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
 
-    let query = (body.prompt || "").trim();
-    if (!query && body.businessType) {
-      query = body.city ? `${body.businessType} in ${body.city}` : body.businessType;
+    let rawQuery = (body.prompt || "").trim();
+    if (!rawQuery && body.businessType) {
+      rawQuery = body.city ? `${body.businessType} in ${body.city}` : body.businessType;
     }
 
-    if (!query || query.length < 2) {
+    if (!rawQuery || rawQuery.length < 2) {
       return NextResponse.json(
         { error: "Please enter a valid lead search query (e.g. 'dentists in Karachi')." },
         { status: 400, headers: corsHeaders }
       );
     }
 
-    // Direct web place search via OpenStreetMap Nominatim (No Docker required)
-    const searchUrl = `https://nominatim.openstreetmap.org/search?format=json&extratags=1&addressdetails=1&limit=40&q=${encodeURIComponent(query)}`;
+    // Clean query by removing conversational prefixes ("find", "search", "show", "get", "list", etc.)
+    const cleanedQuery = rawQuery
+      .replace(/^(find|search|scrape|get|show|fetch|list|all|locate|give\s+me)\s+/i, "")
+      .trim();
 
-    const res = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": "DevForge-LeadGen/1.0 (https://devforge.ai)",
-        "Accept-Language": "en",
-      },
-    });
+    // Query both cleaned query and original raw query as fallback
+    const targetQueries = Array.from(new Set([cleanedQuery, rawQuery])).filter(Boolean);
 
-    if (!res.ok) {
-      throw new Error(`Location search service returned HTTP ${res.status}`);
-    }
+    let rawPlaces: any[] = [];
 
-    const data = await res.json();
-    if (!Array.isArray(data)) {
-      throw new Error("Invalid response format from search provider.");
+    for (const q of targetQueries) {
+      const searchUrl = `https://nominatim.openstreetmap.org/search?format=json&extratags=1&addressdetails=1&limit=50&q=${encodeURIComponent(q)}`;
+
+      const res = await fetch(searchUrl, {
+        headers: {
+          "User-Agent": "DevForge-LeadGen/1.0 (https://devforge.ai)",
+          "Accept-Language": "en",
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          rawPlaces = data;
+          break; // Stop on first successful results set
+        }
+      }
     }
 
     // Map raw OSM place entries into clean lead objects
-    const leads = data.map((place: any, index: number) => {
+    const leads = rawPlaces.map((place: any, index: number) => {
       const tags = place.extratags || {};
       const addr = place.address || {};
-      
+
       const name =
         tags.name ||
         addr.amenity ||
         addr.shop ||
         addr.office ||
+        addr.building ||
         place.name ||
         (place.display_name ? place.display_name.split(",")[0] : "Local Business");
 
       const category =
         tags.healthcare ||
         tags.amenity ||
+        tags.shop ||
+        tags.office ||
         place.type ||
         place.class ||
         "Business";
 
       const fullAddress =
         place.display_name ||
-        [addr.road, addr.suburb, addr.city || addr.town, addr.state, addr.country]
+        [addr.road, addr.suburb, addr.city || addr.town || addr.state, addr.country]
           .filter(Boolean)
           .join(", ");
 
@@ -107,7 +120,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        query: query,
+        query: rawQuery,
         total: leads.length,
         leads: leads,
       },
