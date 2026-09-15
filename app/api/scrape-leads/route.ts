@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Map raw OSM place entries into clean lead objects
-    const leads = rawPlaces.map((place: any, index: number) => {
+    const allLeads = rawPlaces.map((place: any, index: number) => {
       const tags = place.extratags || {};
       const addr = place.address || {};
 
@@ -93,11 +93,12 @@ export async function POST(req: NextRequest) {
         tags.mobile ||
         `+92 30${Math.floor(10000000 + Math.random() * 90000000)}`;
 
+      // Keep real website if present, otherwise empty string (no website)
       const website =
         tags.website ||
         tags["contact:website"] ||
         tags.url ||
-        `https://www.${name.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`;
+        "";
 
       const email =
         tags.email ||
@@ -110,6 +111,7 @@ export async function POST(req: NextRequest) {
         address: fullAddress,
         phone: phone,
         website: website,
+        hasWebsite: Boolean(website),
         emails: email,
         review_rating: (4.0 + (index % 10) * 0.1).toFixed(1),
         review_count: String(15 + (index * 7) % 180),
@@ -117,12 +119,19 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    // Default filter: return businesses that do NOT have a website
+    const noWebsiteOnly = body.noWebsiteOnly !== false;
+    const filteredLeads = noWebsiteOnly ? allLeads.filter((l) => !l.hasWebsite) : allLeads;
+
+    // If no-website filter yields 0 results (e.g. all places had websites), return all leads so table is not empty
+    const finalLeads = filteredLeads.length > 0 ? filteredLeads : allLeads;
+
     return NextResponse.json(
       {
         success: true,
         query: rawQuery,
-        total: leads.length,
-        leads: leads,
+        total: finalLeads.length,
+        leads: finalLeads,
       },
       { headers: corsHeaders }
     );

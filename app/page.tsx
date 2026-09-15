@@ -492,6 +492,13 @@ export default function Home() {
     }
   };
 
+  const handleCreateWebsiteForLead = (lead: any) => {
+    const leadPrompt = `Create a modern, responsive website for "${lead.title}", a ${lead.category || "business"} located at ${lead.address || "local area"}. Phone: ${lead.phone || "N/A"}. Include hero section, services list, location, contact details, and appointment booking form.`;
+    setPrompt(leadPrompt);
+    setScreenMode("single");
+    handleGenerate(undefined, leadPrompt);
+  };
+
   const handleExportLeadsCSV = () => {
     if (!leadsResults || leadsResults.length === 0) return;
     const headers = ["title", "category", "address", "phone", "website", "review_rating", "review_count", "emails", "link"];
@@ -1330,10 +1337,10 @@ export default function Home() {
                             <th className="py-3 px-3">Category</th>
                             <th className="py-3 px-3">Address</th>
                             <th className="py-3 px-3">Phone</th>
-                            <th className="py-3 px-3">Website</th>
+                            <th className="py-3 px-3">Website Status</th>
                             <th className="py-3 px-3">Rating / Reviews</th>
                             <th className="py-3 px-3">Email</th>
-                            <th className="py-3 px-3">Map</th>
+                            <th className="py-3 px-3 text-right">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
@@ -1345,12 +1352,14 @@ export default function Home() {
                               <td className="py-3 px-3 font-medium">{lead.phone || "—"}</td>
                               <td className="py-3 px-3">
                                 {lead.website ? (
-                                  <a href={lead.website.startsWith("http") ? lead.website : `http://${lead.website}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
-                                    <span>Website</span>
+                                  <a href={lead.website.startsWith("http") ? lead.website : `http://${lead.website}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 font-semibold">
+                                    <span>Has Website</span>
                                     <ExternalLink className="w-3 h-3 shrink-0" />
                                   </a>
                                 ) : (
-                                  "—"
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/80 text-[10px] font-bold">
+                                    No Website
+                                  </span>
                                 )}
                               </td>
                               <td className="py-3 px-3">
@@ -1363,15 +1372,15 @@ export default function Home() {
                                 )}
                               </td>
                               <td className="py-3 px-3">{lead.emails || "—"}</td>
-                              <td className="py-3 px-3">
-                                {lead.link ? (
-                                  <a href={lead.link} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline inline-flex items-center gap-1 font-medium">
-                                    <span>Map</span>
-                                    <ExternalLink className="w-3 h-3 shrink-0" />
-                                  </a>
-                                ) : (
-                                  "—"
-                                )}
+                              <td className="py-3 px-3 text-right">
+                                <button
+                                  onClick={() => handleCreateWebsiteForLead(lead)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm hover:shadow active:scale-95 transition cursor-pointer"
+                                  title={`Generate custom website for ${lead.title}`}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Create Website</span>
+                                </button>
                               </td>
                             </tr>
                           ))}
