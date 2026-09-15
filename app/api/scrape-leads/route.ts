@@ -12,73 +12,6 @@ export async function OPTIONS() {
   return new Response(null, { headers: corsHeaders });
 }
 
-// Simple robust CSV parser for scraper output
-function parseCSV(csvText: string): Array<Record<string, string>> {
-  if (!csvText || !csvText.trim()) return [];
-  const lines: string[] = [];
-  let currentLine = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < csvText.length; i++) {
-    const char = csvText[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      currentLine += char;
-    } else if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && csvText[i + 1] === "\n") i++;
-      lines.push(currentLine);
-      currentLine = "";
-    } else {
-      currentLine += char;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-
-  if (lines.length === 0) return [];
-
-  const parseRow = (rowStr: string): string[] => {
-    const cells: string[] = [];
-    let currentCell = "";
-    let insideQuote = false;
-
-    for (let i = 0; i < rowStr.length; i++) {
-      const char = rowStr[i];
-      if (char === '"') {
-        if (insideQuote && rowStr[i + 1] === '"') {
-          currentCell += '"';
-          i++;
-        } else {
-          insideQuote = !insideQuote;
-        }
-      } else if (char === "," && !insideQuote) {
-        cells.push(currentCell.trim());
-        currentCell = "";
-      } else {
-        currentCell += char;
-      }
-    }
-    cells.push(currentCell.trim());
-    return cells;
-  };
-
-  const headers = parseRow(lines[0]).map((h) => h.replace(/^"|"$/g, "").trim());
-  const results: Array<Record<string, string>> = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const rowValues = parseRow(lines[i]);
-    const rowObj: Record<string, string> = {};
-    headers.forEach((header, idx) => {
-      let val = rowValues[idx] || "";
-      val = val.replace(/^"|"$/g, "").trim();
-      rowObj[header] = val;
-    });
-    results.push(rowObj);
-  }
-
-  return results;
-}
-
 // Geocode helper via OpenStreetMap Nominatim
 async function geocodePlace(query: string): Promise<{ lat: string; lon: string } | null> {
   try {
@@ -107,23 +40,30 @@ async function geocodePlace(query: string): Promise<{ lat: string; lon: string }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const prompt = (body.prompt || "").trim();
+    
+    // Construct query from businessType + city or prompt
+    let query = (body.prompt || "").trim();
+    if (!query && body.businessType) {
+      query = body.city ? `${body.businessType} in ${body.city}` : body.businessType;
+    }
+
     const requestedDepth = body.depth ? Number(body.depth) : 5;
 
-    if (!prompt || prompt.length < 3) {
+    if (!query || query.length < 3) {
       return NextResponse.json(
-        { error: "Please enter a valid lead search query (e.g. 'Find dentists in Karachi')." },
+        { error: "Please enter a valid search query or business type and city." },
         { status: 400, headers: corsHeaders }
       );
     }
 
     const scraperBaseUrl = (
+      process.env.SCRAPER_URL ||
       process.env.GOOGLE_MAPS_SCRAPER_URL ||
       process.env.SCRAPER_BASE_URL ||
       "http://localhost:8080"
     ).replace(/\/$/, "");
 
-    // 1. Check health of scraper service
+    // 1. Health check Docker scraper API
     try {
       const healthRes = await fetch(`${scraperBaseUrl}/api/v1/jobs`, {
         method: "GET",
@@ -136,22 +76,26 @@ export async function POST(req: NextRequest) {
     } catch (err: any) {
       return NextResponse.json(
         {
-          error: `Google Maps Scraper service is not reachable at ${scraperBaseUrl}. Please verify the scraper backend/Docker container is running.`,
+          error: `Docker Google Maps Scraper service is unreachable at ${scraperBaseUrl}. Check that the container and Cloudflare Tunnel are running.`,
         },
         { status: 503, headers: corsHeaders }
       );
     }
 
-    // 2. Resolve coordinates
-    let coords = await geocodePlace(prompt);
+    // 2. Geocode query location
+    let coords = await geocodePlace(query);
     if (!coords) {
-      coords = { lat: "24.8607", lon: "67.0011" }; // Default Karachi center fallback
+      if (/lahore/i.test(query)) {
+        coords = { lat: "31.5204", lon: "74.3587" };
+      } else {
+        coords = { lat: "24.8607", lon: "67.0011" };
+      }
     }
 
-    // 3. Create scrape job
+    // 3. Create scrape job payload (conservative defaults: depth 5, max_time 300)
     const jobPayload = {
       name: "devforge-lead-scrape",
-      keywords: [prompt],
+      keywords: [query],
       lang: "en",
       zoom: 15,
       lat: coords.lat,
@@ -172,7 +116,7 @@ export async function POST(req: NextRequest) {
     if (!createRes.ok) {
       const errText = await createRes.text().catch(() => "");
       return NextResponse.json(
-        { error: `Failed to create scrape job: ${errText || createRes.statusText}` },
+        { error: `Failed to create scraper job: ${errText || createRes.statusText}` },
         { status: 500, headers: corsHeaders }
       );
     }
@@ -187,90 +131,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Poll until complete
-    let completed = false;
-    let pollCount = 0;
-    const maxPolls = 40;
-
-    while (!completed && pollCount < maxPolls) {
-      pollCount++;
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      const pollRes = await fetch(`${scraperBaseUrl}/api/v1/jobs/${jobId}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-
-      if (pollRes.ok) {
-        const pollData = await pollRes.json();
-        const status = (pollData.Status || pollData.status || "").toLowerCase();
-
-        if (status === "ok") {
-          completed = true;
-          break;
-        }
-        if (status === "failed") {
-          return NextResponse.json(
-            { error: "The scraper job failed. Google rate limits or anti-bot blocks may be active." },
-            { status: 500, headers: corsHeaders }
-          );
-        }
-      }
-    }
-
-    if (!completed) {
-      return NextResponse.json(
-        { error: "Scrape request timed out. Please try again with a narrower search." },
-        { status: 504, headers: corsHeaders }
-      );
-    }
-
-    // 5. Download results CSV
-    const downloadRes = await fetch(`${scraperBaseUrl}/api/v1/jobs/${jobId}/download`, {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    if (!downloadRes.ok) {
-      return NextResponse.json(
-        { error: "Failed to download scraped results from backend." },
-        { status: 500, headers: corsHeaders }
-      );
-    }
-
-    const csvText = await downloadRes.text();
-    const rawRows = parseCSV(csvText);
-
-    // Map rows to clean lead objects
-    const leads = rawRows.map((r) => ({
-      title: r.title || r.name || "N/A",
-      category: r.category || "",
-      address: r.address || r.complete_address || "",
-      phone: r.phone || "",
-      website: r.website || "",
-      review_rating: r.review_rating || r.rating || "",
-      review_count: r.review_count || r.reviews || "",
-      emails: r.emails || r.email || "",
-      link: r.link || r.maps_url || "",
-      instagram: r.instagram || "",
-      facebook: r.facebook || "",
-      linkedin: r.linkedin || "",
-    }));
-
+    // Return job ID immediately (asynchronous pattern)
     return NextResponse.json(
       {
         success: true,
-        query: prompt,
-        total: leads.length,
-        leads: leads,
+        jobId: jobId,
+        status: "working",
+        query: query,
+        message: "Scraping job created successfully.",
       },
       { headers: corsHeaders }
     );
   } catch (error: any) {
-    console.error("Scrape Leads Error:", error);
+    console.error("Scrape Create Job Error:", error);
     return NextResponse.json(
-      { error: error?.message || "An unexpected error occurred while searching for leads." },
+      { error: error?.message || "An unexpected error occurred while initiating scrape job." },
       { status: 500, headers: corsHeaders }
     );
   }

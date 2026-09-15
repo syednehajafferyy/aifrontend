@@ -468,22 +468,71 @@ export default function Home() {
 
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") || "";
-      const apiEndpoint = backendUrl ? `${backendUrl}/api/scrape-leads` : "/api/scrape-leads";
+      const createEndpoint = backendUrl ? `${backendUrl}/api/scrape-leads` : "/api/scrape-leads";
 
-      const response = await fetch(apiEndpoint, {
+      // 1. Create scraper job
+      const response = await fetch(createEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: targetPrompt }),
+        body: JSON.stringify({ prompt: targetPrompt, depth: 5 }),
       });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to search for leads");
+        throw new Error(data.error || "Failed to initiate scraper job.");
       }
 
-      setLeadsResults(data.leads || []);
-      setScrapedQuery(targetPrompt);
+      // If leads returned directly
+      if (Array.isArray(data.leads)) {
+        setLeadsResults(data.leads);
+        setScrapedQuery(targetPrompt);
+        return;
+      }
+
+      const jobId = data.jobId;
+      if (!jobId) {
+        throw new Error("No job ID was returned from scraper endpoint.");
+      }
+
+      // 2. Poll status endpoint asynchronously
+      let completed = false;
+      let pollCount = 0;
+      const maxPolls = 40;
+
+      while (!completed && pollCount < maxPolls) {
+        pollCount++;
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+
+        const statusEndpoint = backendUrl
+          ? `${backendUrl}/api/scrape-leads/${jobId}`
+          : `/api/scrape-leads/${jobId}`;
+
+        const pollRes = await fetch(statusEndpoint, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        });
+
+        if (pollRes.ok) {
+          const pollData = await pollRes.json();
+          const status = (pollData.status || "").toLowerCase();
+
+          if (status === "ok") {
+            completed = true;
+            setLeadsResults(pollData.leads || []);
+            setScrapedQuery(targetPrompt);
+            break;
+          }
+          if (status === "failed") {
+            throw new Error(pollData.error || "The scraper job failed on the host container.");
+          }
+        }
+      }
+
+      if (!completed) {
+        throw new Error("Scraping request timed out. Please try again or check host Docker container.");
+      }
     } catch (err: any) {
       console.error("Lead Search Error:", err);
       setLeadsError(err.message || "An error occurred while searching for leads.");
